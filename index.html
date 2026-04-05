@@ -21,9 +21,8 @@
     const { useState, useEffect, useRef } = React;
 
     const USAGE_PROFILES = [
-      { id: "haiku-reply", label: "Haiku会話", emoji: "🐣", costPer: 0.0027, desc: "Reply 1往復" },
-      { id: "sonnet-push", label: "Sonnet配信", emoji: "🎵", costPer: 0.0099, desc: "Push 1通" },
-      { id: "sonnet-reply", label: "Sonnet会話", emoji: "💬", costPer: 0.0054, desc: "Reply 1往復" },
+      { id: "haiku-reply", label: "Haiku会話", emoji: "🐣", costPer: 0.0027, tokPer: "~900", desc: "Reply 1往復" },
+      { id: "sonnet-push", label: "Sonnet配信", emoji: "🎵", costPer: 0.0099, tokPer: "~1,800", desc: "Push 1通" },
     ];
 
     const STORAGE_KEY = "chappiyo-api-tracker";
@@ -342,13 +341,14 @@
 
           {/* Reference */}
           <div style={{ background: "white", borderRadius: 16, padding: "12px 16px", marginBottom: 14, boxShadow: "0 1px 8px rgba(155,181,224,0.08)" }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#AABBD4", marginBottom: 8 }}>1回あたりの目安コスト</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#AABBD4", marginBottom: 8 }}>1回あたりの目安</div>
             <div style={{ display: "flex", gap: 6 }}>
               {USAGE_PROFILES.map(p => (
-                <div key={p.id} style={{ flex: 1, fontSize: 10, color: "#8A9BBF", textAlign: "center", background: "#F8FAFF", borderRadius: 8, padding: "6px 4px" }}>
+                <div key={p.id} style={{ flex: 1, fontSize: 10, color: "#8A9BBF", textAlign: "center", background: "#F8FAFF", borderRadius: 8, padding: "8px 4px" }}>
                   <span style={{ fontSize: 14 }}>{p.emoji}</span>
                   <div style={{ fontWeight: 600, marginTop: 2 }}>${p.costPer}</div>
-                  <div style={{ fontSize: 8, color: "#B8CAE4" }}>{p.desc}</div>
+                  <div style={{ fontSize: 9, color: "#9AADCF", marginTop: 1 }}>{p.tokPer} tok</div>
+                  <div style={{ fontSize: 8, color: "#C8D8EF", marginTop: 2 }}>{p.desc}</div>
                 </div>
               ))}
             </div>
