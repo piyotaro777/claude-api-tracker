@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🐺 API Tracker 🩵</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐺</text></svg>" />
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: linear-gradient(160deg, #F0F4FF 0%, #FFF5F9 40%, #F0FAFF 100%); min-height: 100vh; }
+    input[type="number"]::-webkit-inner-spin-button { opacity: 0.3; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const USAGE_PROFILES = [
+      { id: "haiku-reply", label: "Haiku会話", emoji: "🐣", costPer: 0.0027, desc: "Reply 1往復" },
+      { id: "sonnet-push", label: "Sonnet配信", emoji: "🎵", costPer: 0.0099, desc: "Push 1通" },
+      { id: "sonnet-reply", label: "Sonnet会話", emoji: "💬", costPer: 0.0054, desc: "Reply 1往復" },
+    ];
+
+    const STORAGE_KEY = "chappiyo-api-tracker";
+
+    function loadData() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch (e) {}
+      return null;
+    }
+
+    function saveData(data) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } catch (e) {}
+    }
+
+    function daysBetween(dateA, dateB) {
+      const a = new Date(dateA);
+      const b = new Date(dateB);
+      return Math.max(1, Math.round(Math.abs(b - a) / (1000 * 60 * 60 * 24)));
+    }
+
+    function formatDateTime(iso) {
+      const d = new Date(iso);
+      return d.toLocaleDateString("ja-JP", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    }
+
+    function StatBox({ label, value, sub, color }) {
+      return (
+        <div style={{ flex: 1, background: color + "12", borderRadius: 12, padding: "10px 8px", textAlign: "center" }}>
+          <div style={{ fontSize: 10, color: "#8A9BBF", fontWeight: 500, marginBottom: 4 }}>{label}</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#5B6B8A" }}>{value}</div>
+          {sub && <div style={{ fontSize: 10, color: "#AABBD4", marginTop: 2 }}>{sub}</div>}
+        </div>
+      );
+    }
+
+    function App() {
+      const [chargeAmount, setChargeAmount] = useState(5);
+      const [snapshots, setSnapshots] = useState([]);
+      const [showForm, setShowForm] = useState(false);
+      const [newUsed, setNewUsed] = useState("");
+      const [newMemo, setNewMemo] = useState("");
+      const [exchangeRate, setExchangeRate] = useState(150);
+      const [editingCharge, setEditingCharge] = useState(false);
+      const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+      // Load
+      useEffect(() => {
+        const saved = loadData();
+        if (saved) {
+          if (saved.chargeAmount !== undefined) setChargeAmount(saved.chargeAmount);
+          if (saved.snapshots) setSnapshots(saved.snapshots);
+          if (saved.exchangeRate) setExchangeRate(saved.exchangeRate);
+        }
+      }, []);
+
+      // Save
+      useEffect(() => {
+        saveData({ chargeAmount, snapshots, exchangeRate });
+      }, [chargeAmount, snapshots, exchangeRate]);
+
+      const latestUsed = snapshots.length > 0 ? snapshots[snapshots.length - 1].used : 0;
+      const remaining = Math.max(0, chargeAmount - latestUsed);
+      const remainingPercent = chargeAmount > 0 ? (remaining / chargeAmount) * 100 : 100;
+
+      let dailyAvg = null;
+      if (snapshots.length >= 2) {
+        const latest = snapshots[snapshots.length - 1];
+        const prev = snapshots[snapshots.length - 2];
+        const days = daysBetween(prev.date, latest.date);
+        const diff = latest.used - prev.used;
+        if (diff > 0) dailyAvg = diff / days;
+      }
+
+      let overallDailyAvg = null;
+      if (snapshots.length >= 2) {
+        const first = snapshots[0];
+        const last = snapshots[snapshots.length - 1];
+        const totalDays = daysBetween(first.date, last.date);
+        const totalDiff = last.used - first.used;
+        if (totalDiff > 0) overallDailyAvg = totalDiff / totalDays;
+      }
+
+      const estimatedDays = dailyAvg ? Math.floor(remaining / dailyAvg) : null;
+      const estimatedDaysOverall = overallDailyAvg ? Math.floor(remaining / overallDailyAvg) : null;
+
+      function addSnapshot() {
+        const used = parseFloat(newUsed);
+        if (isNaN(used) || used < 0) return;
+        setSnapshots(prev => [...prev, {
+          id: Date.now(),
+          date: new Date().toISOString(),
+          used: used,
+          memo: newMemo.trim(),
+        }]);
+        setNewUsed("");
+        setNewMemo("");
+        setShowForm(false);
+      }
+
+      function removeSnapshot(id) {
+        setSnapshots(prev => prev.filter(s => s.id !== id));
+      }
+
+      function clearAll() {
+        setSnapshots([]);
+        setShowClearConfirm(false);
+      }
+
+      function getSnapshotDiff(index) {
+        if (index === 0) return null;
+        const curr = snapshots[index];
+        const prv = snapshots[index - 1];
+        const d = curr.used - prv.used;
+        const dy = daysBetween(prv.date, curr.date);
+        return { diff: d, days: dy, perDay: d / dy };
+      }
+
+      function dollarToCount(dollars, profileId) {
+        const profile = USAGE_PROFILES.find(p => p.id === profileId);
+        if (!profile || dollars <= 0) return 0;
+        return Math.floor(dollars / profile.costPer);
+      }
+
+      const newUsedNum = parseFloat(newUsed);
+      const hasDiff = snapshots.length > 0 && !isNaN(newUsedNum) && newUsedNum > latestUsed;
+      const diffAmount = hasDiff ? newUsedNum - latestUsed : 0;
+      const gaugeColor = remainingPercent > 50 ? "#7EC8C8" : remainingPercent > 20 ? "#E8C170" : "#E88B8B";
+
+      return (
+        <div style={{
+          minHeight: "100vh",
+          fontFamily: "'M PLUS Rounded 1c', 'Nunito', sans-serif",
+          padding: "16px", maxWidth: 480, margin: "0 auto",
+        }}>
+          {/* Header */}
+          <div style={{ textAlign: "center", marginBottom: 20, padding: "16px 0 8px" }}>
+            <div style={{ fontSize: 26, fontWeight: 700, color: "#5B6B8A", letterSpacing: 1 }}>🐺 API Tracker 🩵</div>
+            <div style={{ fontSize: 11, color: "#9AADCF", marginTop: 4 }}>ちゃっぴよ コスト管理</div>
+          </div>
+
+          {/* Balance Card */}
+          <div style={{ background: "white", borderRadius: 20, padding: "20px", marginBottom: 14, boxShadow: "0 2px 12px rgba(155,181,224,0.12)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12, color: "#8A9BBF", fontWeight: 500 }}>チャージ総額</span>
+                {editingCharge ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ fontSize: 16, color: "#5B6B8A", fontWeight: 700 }}>$</span>
+                    <input type="number" value={chargeAmount}
+                      onChange={e => setChargeAmount(Number(e.target.value) || 0)}
+                      onBlur={() => setEditingCharge(false)}
+                      autoFocus
+                      style={{ width: 60, fontSize: 20, fontWeight: 700, color: "#5B6B8A", border: "none", borderBottom: "2px solid #9BB5E0", background: "transparent", textAlign: "center", outline: "none", fontFamily: "inherit" }}
+                    />
+                  </div>
+                ) : (
+                  <div onClick={() => setEditingCharge(true)} style={{ fontSize: 20, fontWeight: 700, color: "#5B6B8A", cursor: "pointer" }}>
+                    ${chargeAmount.toFixed(2)}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => setChargeAmount(p => p + 5)}
+                style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #D6E4F7", background: "#F8FAFF", color: "#8A9BBF", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                +$5 チャージ
+              </button>
+            </div>
+
+            {/* Gauge */}
+            <div style={{ background: "#F0F4FA", borderRadius: 12, height: 32, overflow: "hidden", position: "relative", marginBottom: 14 }}>
+              <div style={{ background: `linear-gradient(90deg, ${gaugeColor}, ${gaugeColor}BB)`, height: "100%", width: `${remainingPercent}%`, borderRadius: 12, transition: "width 0.5s ease", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {remainingPercent > 20 && <span style={{ fontSize: 12, color: "white", fontWeight: 700 }}>${remaining.toFixed(2)} 残り</span>}
+              </div>
+              {remainingPercent <= 20 && <span style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", fontSize: 12, color: "#C4A4A4", fontWeight: 700 }}>${remaining.toFixed(2)} 残り</span>}
+            </div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <StatBox label="使用済み" value={`$${latestUsed.toFixed(2)}`} sub={`¥${Math.round(latestUsed * exchangeRate)}`} color="#E88B8B" />
+              <StatBox label="残高" value={`$${remaining.toFixed(2)}`} sub={`¥${Math.round(remaining * exchangeRate)}`} color="#7EC8C8" />
+              <StatBox label="消費率" value={`${(100 - remainingPercent).toFixed(1)}%`} sub={snapshots.length > 0 ? `${snapshots.length}回記録` : "—"} color="#9BB5E0" />
+            </div>
+          </div>
+
+          {/* Remaining Conversations */}
+          {remaining > 0 && (
+            <div style={{ background: "white", borderRadius: 20, padding: "16px 18px", marginBottom: 14, boxShadow: "0 2px 12px rgba(155,181,224,0.12)" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#8A9BBF", marginBottom: 12 }}>🐺 残高であと何回？</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {USAGE_PROFILES.map(p => (
+                  <div key={p.id} style={{ flex: 1, background: "#F8FAFF", borderRadius: 12, padding: "10px 6px", textAlign: "center" }}>
+                    <div style={{ fontSize: 18, marginBottom: 4 }}>{p.emoji}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: "#5B6B8A" }}>{dollarToCount(remaining, p.id).toLocaleString()}</div>
+                    <div style={{ fontSize: 9, color: "#9AADCF", marginTop: 2, lineHeight: 1.3 }}>{p.label}</div>
+                    <div style={{ fontSize: 8, color: "#C8D8EF", marginTop: 1 }}>{p.desc}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Prediction */}
+          {estimatedDays !== null && (
+            <div style={{ background: "white", borderRadius: 20, padding: "16px 18px", marginBottom: 14, boxShadow: "0 2px 12px rgba(155,181,224,0.12)" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#8A9BBF", marginBottom: 12 }}>📅 残高予測</div>
+              <div style={{ background: "linear-gradient(135deg, #E8F4FD, #F0F0FA)", borderRadius: 14, padding: "12px 16px", marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#9AADCF", marginBottom: 2 }}>直近ペースだと</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "#5B6B8A" }}>あと約 {estimatedDays} 日</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 11, color: "#9AADCF" }}>日割り</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#5B6B8A" }}>${dailyAvg.toFixed(4)}/日</div>
+                    <div style={{ fontSize: 10, color: "#AABBD4" }}>≈ Haiku {Math.round(dailyAvg / 0.0027)}回/日</div>
+                  </div>
+                </div>
+              </div>
+              {estimatedDaysOverall !== null && snapshots.length > 2 && (
+                <div style={{ background: "#F8FAFF", borderRadius: 12, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#AABBD4" }}>全期間ペースだと</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#7A8BA8" }}>あと約 {estimatedDaysOverall} 日</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 12, color: "#AABBD4" }}>${overallDailyAvg.toFixed(4)}/日</div>
+                    <div style={{ fontSize: 10, color: "#C8D8EF" }}>≈ Haiku {Math.round(overallDailyAvg / 0.0027)}回/日</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Add Snapshot */}
+          {!showForm ? (
+            <button onClick={() => setShowForm(true)}
+              style={{ width: "100%", padding: "14px", borderRadius: 16, border: "2px dashed #C8D8EF", background: "transparent", color: "#8A9BBF", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", marginBottom: 14 }}>
+              ＋ 使用額を記録する
+            </button>
+          ) : (
+            <div style={{ background: "white", borderRadius: 20, padding: "18px", marginBottom: 14, boxShadow: "0 2px 16px rgba(155,181,224,0.18)" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#5B6B8A", marginBottom: 4 }}>使用額を記録 📝</div>
+              <div style={{ fontSize: 11, color: "#AABBD4", marginBottom: 14 }}>
+                <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener noreferrer" style={{ color: "#9BB5E0", textDecoration: "none", fontWeight: 600 }}>console.anthropic.com → Billing ↗</a>
+                {" の累計使用額を入力"}
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: "#8A9BBF", marginBottom: 4, fontWeight: 500 }}>累計使用額（$）</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 18, fontWeight: 700, color: "#5B6B8A" }}>$</span>
+                  <input type="number" step="0.01" placeholder="0.15" value={newUsed}
+                    onChange={e => setNewUsed(e.target.value)}
+                    style={{ flex: 1, padding: "10px 12px", borderRadius: 12, border: "1.5px solid #D6E4F7", fontSize: 18, fontWeight: 700, color: "#5B6B8A", fontFamily: "inherit", outline: "none", background: "#FAFCFF" }}
+                  />
+                </div>
+                {hasDiff && (
+                  <div style={{ fontSize: 11, color: "#9BB5E0", marginTop: 6, lineHeight: 1.6 }}>
+                    前回から +${diffAmount.toFixed(4)} <span style={{ color: "#AABBD4" }}>(≈ 🐣{Math.round(diffAmount / 0.0027)}回 / 🎵{Math.round(diffAmount / 0.0099)}回)</span>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: "#8A9BBF", marginBottom: 4, fontWeight: 500 }}>メモ（任意）</div>
+                <input type="text" placeholder="例：1週間運用後、テスト後..." value={newMemo}
+                  onChange={e => setNewMemo(e.target.value)}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: "1.5px solid #E2EAF5", fontSize: 13, color: "#5B6B8A", fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => { setShowForm(false); setNewUsed(""); setNewMemo(""); }}
+                  style={{ flex: 1, padding: "10px", borderRadius: 12, border: "1.5px solid #D6E4F7", background: "white", color: "#8A9BBF", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                  キャンセル
+                </button>
+                <button onClick={addSnapshot}
+                  style={{ flex: 1, padding: "10px", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #9BB5E0, #7EC8C8)", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                  記録する 🖤
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* History */}
+          {snapshots.length > 0 && (
+            <div style={{ background: "white", borderRadius: 20, padding: "16px 18px", marginBottom: 14, boxShadow: "0 2px 12px rgba(155,181,224,0.12)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#8A9BBF" }}>記録履歴</span>
+                {!showClearConfirm ? (
+                  <button onClick={() => setShowClearConfirm(true)}
+                    style={{ fontSize: 11, color: "#D4A0A0", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>全削除</button>
+                ) : (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={clearAll}
+                      style={{ fontSize: 11, color: "white", background: "#E88B8B", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontFamily: "inherit" }}>削除する</button>
+                    <button onClick={() => setShowClearConfirm(false)}
+                      style={{ fontSize: 11, color: "#8A9BBF", background: "none", border: "1px solid #D6E4F7", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontFamily: "inherit" }}>やめる</button>
+                  </div>
+                )}
+              </div>
+
+              {[...snapshots].reverse().map((snap, revIdx) => {
+                const realIdx = snapshots.length - 1 - revIdx;
+                const d = getSnapshotDiff(realIdx);
+                return (
+                  <div key={snap.id} style={{ padding: "10px 0", borderBottom: revIdx < snapshots.length - 1 ? "1px solid #F0F4FA" : "none" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#5B6B8A" }}>
+                          ${snap.used.toFixed(2)}
+                          {d && <span style={{ fontSize: 11, color: "#E88B8B", fontWeight: 500, marginLeft: 6 }}>+${d.diff.toFixed(4)}</span>}
+                        </div>
+                        <div style={{ fontSize: 10, color: "#AABBD4", marginTop: 2 }}>
+                          {formatDateTime(snap.date)}
+                          {d && ` (${d.days}日間 · $${d.perDay.toFixed(4)}/日)`}
+                        </div>
+                        {d && <div style={{ fontSize: 9, color: "#B8CAE4", marginTop: 2 }}>≈ 🐣{Math.round(d.diff / 0.0027)}回 / 🎵{Math.round(d.diff / 0.0099)}回 相当</div>}
+                        {snap.memo && <div style={{ fontSize: 10, color: "#9BB5E0", marginTop: 2 }}>📝 {snap.memo}</div>}
+                      </div>
+                      <button onClick={() => removeSnapshot(snap.id)}
+                        style={{ background: "none", border: "none", color: "#D4BEBE", fontSize: 14, cursor: "pointer", padding: "2px 6px", marginTop: 2 }}>×</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* How to use */}
+          {snapshots.length === 0 && (
+            <div style={{ background: "#F8FAFF", borderRadius: 16, padding: "16px 18px", marginBottom: 14, fontSize: 12, color: "#8A9BBF", lineHeight: 1.8 }}>
+              <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>💡 使い方</div>
+              <div>① <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener noreferrer" style={{ color: "#7EAAC8", textDecoration: "none", fontWeight: 600 }}>console.anthropic.com ↗</a> を開く</div>
+              <div>② Billing → 累計使用額を確認</div>
+              <div>③ ここに記録する</div>
+              <div>④ 数日後にまた記録すると日割りペースと残日数＆回数を予測🐺</div>
+            </div>
+          )}
+
+          {/* Model Reference */}
+          <div style={{ background: "white", borderRadius: 16, padding: "12px 16px", marginBottom: 14, boxShadow: "0 1px 8px rgba(155,181,224,0.08)" }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#AABBD4", marginBottom: 8 }}>1回あたりの目安コスト</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {USAGE_PROFILES.map(p => (
+                <div key={p.id} style={{ flex: 1, fontSize: 10, color: "#8A9BBF", textAlign: "center", background: "#F8FAFF", borderRadius: 8, padding: "6px 4px" }}>
+                  <span style={{ fontSize: 14 }}>{p.emoji}</span>
+                  <div style={{ fontWeight: 600, marginTop: 2 }}>${p.costPer}</div>
+                  <div style={{ fontSize: 8, color: "#B8CAE4" }}>{p.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Exchange Rate */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px", fontSize: 11, color: "#AABBD4" }}>
+            <span>為替: $1 =</span>
+            <input type="number" value={exchangeRate} onChange={e => setExchangeRate(Number(e.target.value) || 150)}
+              style={{ width: 50, fontSize: 11, border: "none", borderBottom: "1px solid #D6E4F7", textAlign: "center", color: "#8A9BBF", background: "transparent", fontFamily: "inherit", outline: "none" }} />
+            <span>円</span>
+          </div>
+
+          <div style={{ textAlign: "center", padding: "8px 0 20px", fontSize: 10, color: "#C8D8EF" }}>🐺🩵 chappiyo api tracker</div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
